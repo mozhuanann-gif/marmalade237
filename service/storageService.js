@@ -13,22 +13,12 @@ export const saveState = (state) => {
 export const loadState = () => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) {
-    return {
-      history: [],
-      decks: [],
-      config: DEFAULT_CONFIG,
-      users: []
-    };
+    return { history: [], decks: [], config: DEFAULT_CONFIG, users: [] };
   }
   try {
     return JSON.parse(saved);
   } catch (e) {
-    return {
-      history: [],
-      decks: [],
-      config: DEFAULT_CONFIG,
-      users: []
-    };
+    return { history: [], decks: [], config: DEFAULT_CONFIG, users: [] };
   }
 };
 
