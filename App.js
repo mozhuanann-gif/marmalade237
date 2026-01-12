@@ -63,7 +63,9 @@ const App = () => {
         const target = parseInt(skillMatch[2]);
         const roll = rollDice('1d100');
         const level = getSuccessLevel(roll.total, target);
-        content = appState.config.templates[level].replace('{user}', user.nickname).replace('{roll}', `${roll.total}/${target}`);
+        content = (appState.config.templates[level] || '{user} 掷骰: {roll}')
+          .replace('{user}', user.nickname)
+          .replace('{roll}', `${roll.total}/${target}`);
       } else {
         const roll = rollDice(formula);
         content = `${user.nickname} 掷出了: ${roll.detail} = ${roll.total}`;
@@ -76,11 +78,22 @@ const App = () => {
       const attrs = generateCoCAttributes();
       const attrStr = Object.entries(attrs).filter(([k]) => k !== 'SAN').map(([k, v]) => `${k}:${v}`).join(' ');
       content = appState.config.templates['coc_gen'].replace('{user}', user.nickname).replace('{attributes}', attrStr);
-      setUser({ ...user, attributes: attrs });
-      saveState({ users: appState.users.map(u => u.email === user.email ? { ...user, attributes: attrs } : u) });
+      const updatedUser = { ...user, attributes: attrs };
+      setUser(updatedUser);
+      saveState({ users: appState.users.map(u => u.email === user.email ? updatedUser : u) });
+    }
+    else if (lower.startsWith('.draw ')) {
+      const deckName = normalizedInput.slice(6).trim();
+      const deck = appState.decks.find(d => d.name === deckName);
+      if (deck) {
+        const result = parseDeck(deck.content);
+        content = appState.config.templates['draw'].replace('{user}', user.nickname).replace('{result}', result);
+      } else {
+        content = `系统：未找到牌堆 "${deckName}"`;
+      }
     }
     else if (lower === '.help') {
-      content = `可用指令：.r, .rh, .nn, .jrrp, .coc, .draw, .help`;
+      content = `可用指令：.r, .rh, .nn, .jrrp, .coc, .draw [牌堆名], .help`;
     }
     else {
       content = raw;
@@ -102,24 +115,42 @@ const App = () => {
 
   if (!user) return html`<${Login} onLogin=${handleLogin} bannedEmails=${appState.config.bannedEmails} />`;
 
-  const bgStyle = appState.config.backgroundImage ? { backgroundImage: `url(${appState.config.backgroundImage})`, backgroundSize: 'cover' } : {};
+  const bgStyle = appState.config.backgroundImage ? { backgroundImage: `url(${appState.config.backgroundImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {};
 
   return html`
     <div className="h-screen flex flex-col overflow-hidden bg-white" style=${bgStyle}>
       <header className="fixed top-0 w-full h-20 bg-white/70 backdrop-blur-xl z-30 px-8 flex items-center justify-between border-b border-amber-100">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-white font-bold">锦</div>
-          <h1 className="font-bold text-gray-800">锦鲤终端</h1>
+          ${appState.config.logoImage ? 
+            html`<img src=${appState.config.logoImage} className="w-10 h-10 rounded-2xl object-cover shadow-sm" />` : 
+            html`<div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-white font-bold">锦</div>`
+          }
+          <div>
+            <h1 className="font-bold text-gray-800">锦鲤终端</h1>
+            <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest opacity-50">Koi Terminal</p>
+          </div>
         </div>
         <div className="flex gap-4">
-          ${user.isKP && html`<button onClick=${() => setIsAdminOpen(!isAdminOpen)} className="text-xs font-bold text-amber-600">管理</button>`}
-          <button onClick=${() => setUser(null)} className="text-amber-400">登出</button>
+          ${user.isKP && html`<button onClick=${() => setIsAdminOpen(!isAdminOpen)} className="px-4 py-2 bg-white border border-amber-100 rounded-xl text-xs font-bold text-amber-600 shadow-sm hover:bg-amber-50 transition-all">管理</button>`}
+          <button onClick=${() => setUser(null)} className="p-2 text-amber-400 hover:bg-amber-50 rounded-xl transition-all">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+          </button>
         </div>
       </header>
       <${CharacterSheet} user=${user} />
       <${HistoryPanel} history=${appState.history} currentUser=${user} onDelete=${deleteMessage} />
       <${CommandInput} onCommand=${handleCommand} themeColor=${appState.config.themeColor} />
-      ${isAdminOpen && html`<${AdminPanel} config=${appState.config} decks=${appState.decks} users=${appState.users} onUpdateConfig=${c => saveState({config: c})} onUpdateDecks=${d => saveState({decks: d})} onClose=${() => setIsAdminOpen(false)} />`}
+      ${isAdminOpen && html`
+        <${AdminPanel} 
+          config=${appState.config} 
+          decks=${appState.decks} 
+          users=${appState.users} 
+          onUpdateConfig=${c => saveState({config: c})} 
+          onUpdateDecks=${d => saveState({decks: d})} 
+          onKick=${email => saveState({ config: { ...appState.config, bannedEmails: [...appState.config.bannedEmails, email] } })}
+          onClose=${() => setIsAdminOpen(false)} 
+        />
+      `}
     </div>
   `;
 };
