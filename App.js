@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import htm from 'htm';
 import { loadState, saveState, deleteMessage } from './storageService.js';
@@ -16,11 +15,25 @@ const App = () => {
   const [appState, setAppState] = useState(loadState());
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
+  // 核心：实时监听封禁状态和状态更新
   useEffect(() => {
-    const handleUpdate = () => setAppState(loadState());
+    const handleUpdate = () => {
+      const newState = loadState();
+      setAppState(newState);
+      
+      // 如果当前登录的用户在封禁列表中，立即踢出
+      if (user && newState.config.bannedEmails.includes(user.email)) {
+        alert('由于违反规则，你已被管理员移出终端。');
+        setUser(null);
+      }
+    };
     window.addEventListener('storage_update', handleUpdate);
-    return () => window.removeEventListener('storage_update', handleUpdate);
-  }, []);
+    window.addEventListener('storage', handleUpdate); // 兼容多标签页
+    return () => {
+      window.removeEventListener('storage_update', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [user]);
 
   const handleCommand = useCallback((raw) => {
     if (!user) return;
@@ -28,85 +41,84 @@ const App = () => {
     if (input.startsWith('。')) input = '.' + input.slice(1);
     
     const parts = input.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
+    const cmdInput = parts[0].toLowerCase();
     const args = parts.slice(1).join(' ');
     
     let content = '';
-    let isHidden = cmd === '.rh';
+    let isHidden = false;
     let commandLabel = raw;
 
-    // 1. 掷骰逻辑 .r / .rh
-    if (cmd === '.r' || cmd === '.rh' || cmd.startsWith('.r')) {
-      let formula = args || '1d100';
-      // 如果指令本身就是 .r20 这种形式
-      if (cmd.length > 2 && /^\d+$/.test(cmd.slice(2))) {
-        formula = cmd.slice(2);
-      } else if (!args && cmd.length > 2) {
-        formula = cmd.slice(2);
+    // 1. 掷骰逻辑修复 (.r23, .r 1d20, .rh 1d100)
+    if (cmdInput.startsWith('.r')) {
+      isHidden = cmdInput.startsWith('.rh');
+      let formula = '';
+      
+      // 如果指令是 .r23 这种紧凑型
+      if (!isHidden && cmdInput.length > 2 && /^\d+$/.test(cmdInput.slice(2))) {
+        formula = cmdInput.slice(2);
+      } else if (isHidden && cmdInput.length > 3 && /^\d+$/.test(cmdInput.slice(3))) {
+        formula = cmdInput.slice(3);
+      } else {
+        formula = args || '1d100';
       }
 
       const roll = rollDice(formula);
       content = `🎲 ${user.nickname} 掷出了 ${roll.detail} = ${roll.total}`;
     } 
-    // 2. 属性检定 .ra [属性] [值]
-    else if (cmd === '.ra') {
+    // 2. 属性检定 .ra [技能名] [成功率]
+    else if (cmdInput === '.ra') {
       const match = args.match(/(.+?)\s+(\d+)/);
       if (match) {
         const name = match[1];
         const target = parseInt(match[2]);
         const roll = rollDice('1d100');
         const level = getSuccessLevel(roll.total, target);
-        content = (appState.config.templates[level] || '{user} 进行 {name} 检定: {roll}')
+        content = (appState.config.templates[level] || '{user} 的 {name} 检定: {roll}')
           .replace('{user}', user.nickname)
           .replace('{name}', name)
           .replace('{roll}', `${roll.total}/${target}`);
       } else {
-        content = `系统提示：.ra 正确语法为 ".ra 技能名 成功率"`;
+        content = `系统提示：.ra 正确语法为 ".ra 技能名 成功率"，例如 ".ra 侦察 50"`;
       }
     }
-    // 3. 人物生成 .coc
-    else if (cmd === '.coc') {
+    // 3. 帮助指令 .help
+    else if (cmdInput === '.help' || cmdInput === '.帮助') {
+      content = `【锦鲤终端 - 指令手册】\n` +
+                `--------------------------\n` +
+                `.r [公式/数字]  : 普通掷骰 (如 .r20, .r3d6+4)\n` +
+                `.rh [公式]      : 暗骰 (结果仅 KP 可见)\n` +
+                `.ra [技能] [值] : 成功率检定 (如 .ra 侦察 45)\n` +
+                `.coc            : 生成 CoC 7版 人物属性\n` +
+                `.jrrp           : 抽取今日锦鲤值\n` +
+                `.draw [牌堆名]  : 从指定牌堆抽取内容\n` +
+                `.nn [新名字]    : 快速修改你的调查员称呼\n` +
+                `* 全指令支持中文句号 "。" 作为前缀`;
+    }
+    // 4. 其他功能
+    else if (cmdInput === '.jrrp') {
+      content = appState.config.templates['jrrp'].replace('{user}', user.nickname).replace('{roll}', getJrrp(user.email));
+    } else if (cmdInput === '.coc') {
       const attrs = generateCoCAttributes();
       const updatedUser = { ...user, attributes: attrs };
       setUser(updatedUser);
       saveState({ users: appState.users.map(u => u.email === user.email ? updatedUser : u) });
       const attrStr = Object.entries(attrs).filter(a => a[0] !== 'SAN').map(a => `${a[0]}:${a[1]}`).join(' ');
       content = appState.config.templates['coc_gen'].replace('{user}', user.nickname).replace('{attributes}', attrStr);
-    }
-    // 4. 今日运势 .jrrp
-    else if (cmd === '.jrrp') {
-      content = appState.config.templates['jrrp'].replace('{user}', user.nickname).replace('{roll}', getJrrp(user.email));
-    }
-    // 5. 牌堆抽卡 .draw
-    else if (cmd === '.draw') {
-      const deck = appState.decks.find(d => d.name === args);
-      if (deck) {
-        content = appState.config.templates['draw'].replace('{user}', user.nickname).replace('{result}', parseDeck(deck.content));
-      } else {
-        content = `系统提示：未找到名为 "${args}" 的牌堆。`;
-      }
-    }
-    // 6. 帮助 .help
-    else if (cmd === '.help' || cmd === '.帮助') {
-      content = `【锦鲤终端 指令指南】\n` +
-                `1. .r [公式] : 掷骰，如 .r1d100, .r3d6+4, .r20\n` +
-                `2. .rh [公式] : 暗骰，结果仅 KP 可见\n` +
-                `3. .ra [技能] [值] : 属性判定，如 .ra 侦察 50\n` +
-                `4. .coc : 自动生成 CoC 7版 人物属性\n` +
-                `5. .jrrp : 查看今日锦鲤运势\n` +
-                `6. .draw [牌堆名] : 从 KP 设置的牌堆中抽卡\n` +
-                `7. .nn [名字] : 修改调查员昵称\n` +
-                `* 支持中文句号 "。" 作为前缀`;
-    }
-    else if (cmd === '.nn') {
+    } else if (cmdInput === '.nn') {
        if (args) {
          const updatedUser = { ...user, nickname: args };
          setUser(updatedUser);
          saveState({ users: appState.users.map(u => u.email === user.email ? updatedUser : u) });
-         content = `系统：调查员已更名为 ${args}`;
+         content = `系统：调查员名称已更新为「${args}」`;
        }
-    }
-    else {
+    } else if (cmdInput === '.draw') {
+      const deck = appState.decks.find(d => d.name === args);
+      if (deck) {
+        content = appState.config.templates['draw'].replace('{user}', user.nickname).replace('{result}', parseDeck(deck.content));
+      } else {
+        content = `系统提示：未找到牌堆「${args}」。`;
+      }
+    } else {
       content = raw;
       commandLabel = '';
     }
@@ -140,7 +152,7 @@ const App = () => {
             html`<img src=${appState.config.logoImage} className="w-10 h-10 rounded-2xl object-cover shadow-sm" />` : 
             html`<div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-white font-bold">锦</div>`
           }
-          <h1 className="font-bold text-gray-800 tracking-tight">锦鲤终端 <span className="text-amber-500 text-[10px] ml-1 opacity-50">KOI-v2</span></h1>
+          <h1 className="font-bold text-gray-800 tracking-tight">锦鲤终端 <span className="text-amber-500 text-[10px] ml-1 opacity-50 uppercase tracking-widest font-mono">猜猜乐 V2</span></h1>
         </div>
         <div className="flex gap-4">
           ${user.isKP && html`<button onClick=${() => setIsAdminOpen(true)} className="px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100 hover:bg-amber-100 transition-all">管理者设置</button>`}
@@ -156,7 +168,11 @@ const App = () => {
           onUpdateConfig=${c => saveState({config: c})}
           onUpdateDecks=${d => saveState({decks: d})}
           onClearHistory=${() => saveState({ history: [] })}
-          onKick=${e => saveState({ config: { ...appState.config, bannedEmails: [...appState.config.bannedEmails, e] } })}
+          onKick=${e => {
+            const list = appState.config.bannedEmails || [];
+            const newList = list.includes(e) ? list.filter(item => item !== e) : [...list, e];
+            saveState({ config: { ...appState.config, bannedEmails: newList } });
+          }}
           onClose=${() => setIsAdminOpen(false)}
         />
       `}
