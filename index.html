@@ -9,13 +9,16 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3418/3418886.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // 设置 process 环境变量供 Gemini API 使用
+        window.process = { env: { API_KEY: '' } };
+    </script>
     <script type="importmap">
     {
       "imports": {
         "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
         "react": "https://esm.sh/react@^19.2.3",
-        "react/": "https://esm.sh/react@^19.2.3/",
-        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react-dom": "https://esm.sh/react-dom@^19.2.3/client",
         "gun": "https://esm.sh/gun@0.2020.1239"
       }
     }
