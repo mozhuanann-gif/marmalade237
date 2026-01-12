@@ -1,0 +1,7 @@
+{
+  "name": "CoC Investigator Terminal - 你是谁？请支持猜猜乐！",
+  "description": "A feature-rich Call of Cthulhu RPG terminal with command-line dice rolling, character generation, KP administration, and real-time state synchronization.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
