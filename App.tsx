@@ -13,7 +13,14 @@ import { 
 import { narrateRoll } from './services/geminiService';
 
 // 初始化实时同步引擎，所有玩家的数据通过此网络实时共享
-const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+const gun = Gun({
+  peers: [
+    'https://gun-manhattan.herokuapp.com/gun', // 旧节点，可保留尝试
+    'https://gun-us.herokuapp.com/gun',       // 北美节点
+    'https://gun-eu.herokuapp.com/gun',       // 欧洲节点
+    'https://gunjs.herokuapp.com/gun'         // 常用节点
+  ]
+});
 const sharedRoom = gun.get('coc_global_room_v3_stable'); 
 
 const App: React.FC = () => {
