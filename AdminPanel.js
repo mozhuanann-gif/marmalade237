@@ -45,7 +45,6 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
     onUpdateDecks(decks.filter(d => d.id !== id));
   };
 
-  // 辅助函数：翻译模板 Key
   const translateKey = (key) => {
     const map = {
       CRITICAL: '大成功',
@@ -71,9 +70,9 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
         <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
           <div>
             <h2 className="text-xl font-bold text-gray-800">KP 控制台</h2>
-            <p className="text-xs text-gray-500">管理模组环境与话术</p>
+            <p className="text-xs text-gray-500">管理环境与调查员</p>
           </div>
-          <button onClick=${onClose} className="p-2 hover:bg-gray-200 rounded-full transition-all">✕</button>
+          <button onClick=${onClose} className="p-2 hover:bg-gray-200 rounded-full">✕</button>
         </div>
 
         <div className="flex bg-gray-100 px-2 pt-2 gap-1">
@@ -93,18 +92,12 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           ${activeTab === 'ui' && html`
             <div className="space-y-6">
               <section>
-                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">场景背景 (高清)</h3>
-                <div className="flex gap-4 items-center">
-                  <label className="flex-1 h-12 flex items-center justify-center border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-amber-500 hover:bg-amber-50 transition-all text-xs text-gray-500">
-                    点击上传图片
-                    <input type="file" onChange=${handleBgUpload} className="hidden" accept="image/*" />
-                  </label>
-                  ${config.backgroundImage && html`<button onClick=${() => onUpdateConfig({...config, backgroundImage: ''})} className="px-4 py-2 text-xs text-red-500 font-bold bg-red-50 rounded-lg">清除</button>`}
-                </div>
+                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">场景背景</h3>
+                <input type="file" onChange=${handleBgUpload} className="block w-full text-xs" accept="image/*" />
               </section>
               <section>
-                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">锦鲤标志 (Logo)</h3>
-                <input type="file" onChange=${handleLogoUpload} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" />
+                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">Logo</h3>
+                <input type="file" onChange=${handleLogoUpload} className="block w-full text-xs" accept="image/*" />
               </section>
             </div>
           `}
@@ -112,7 +105,7 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           ${activeTab === 'templates' && html`
             <div className="space-y-6">
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[10px] text-amber-700 italic">
-                提示：可以使用 {`{user}`} (玩家名), {`{roll}`} (点数), {`{attributes}`} (属性) 等变量。
+                提示：可以使用 {user} (玩家名), {roll} (点数), {attributes} (属性) 等占位符。
               </div>
               ${Object.entries(config.templates).map(([key, value]) => html`
                 <div key=${key} className="space-y-2">
@@ -128,22 +121,15 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           `}
 
           ${activeTab === 'decks' && html`
-            <div className="space-y-8">
-              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-4">
-                <h4 className="text-xs font-bold text-gray-700 uppercase">新建牌堆</h4>
-                <input placeholder="牌堆名称 (如: 随机事件)" value=${newDeckName} onChange=${e => setNewDeckName(e.target.value)} className="w-full p-3 rounded-xl border border-gray-200 outline-none text-sm" />
-                <textarea placeholder="内容，例如: [大雨, 狂风, 烈日]" value=${newDeckContent} onChange=${e => setNewDeckContent(e.target.value)} className="w-full p-3 rounded-xl border border-gray-200 outline-none text-sm h-24"></textarea>
-                <button onClick=${addDeck} className="w-full py-3 bg-amber-600 text-white rounded-xl font-bold shadow-lg shadow-amber-200 active:scale-95 transition-all">添加牌堆</button>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-gray-700 uppercase">现有牌堆</h4>
-                ${decks.map(deck => html`
-                  <div key=${deck.id} className="p-4 bg-white rounded-xl border border-gray-100 group">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-bold text-gray-800 text-sm">.draw ${deck.name}</span>
-                      <button onClick=${() => deleteDeck(deck.id)} className="text-red-400 hover:text-red-600 text-xs">删除</button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 truncate">${deck.content}</p>
+            <div className="space-y-4">
+              <input placeholder="牌堆名" value=${newDeckName} onChange=${e => setNewDeckName(e.target.value)} className="w-full p-2 border rounded" />
+              <textarea placeholder="内容 [A, B, C]" value=${newDeckContent} onChange=${e => setNewDeckContent(e.target.value)} className="w-full p-2 border rounded h-32"></textarea>
+              <button onClick=${addDeck} className="w-full py-2 bg-amber-600 text-white rounded">添加</button>
+              <div className="mt-4 space-y-2">
+                ${decks.map(d => html`
+                  <div key=${d.id} className="p-3 bg-gray-50 rounded border flex justify-between">
+                    <span>${d.name}</span>
+                    <button onClick=${() => deleteDeck(d.id)} className="text-red-500 text-xs">删除</button>
                   </div>
                 `)}
               </div>
@@ -152,29 +138,25 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
 
           ${activeTab === 'users' && html`
             <div className="space-y-4">
-              <h3 className="text-sm font-bold text-gray-700">当前模组调查员 (${users.length})</h3>
-              <div className="space-y-2">
-                ${users.map(u => html`
-                  <div key=${u.email} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-2xl hover:shadow-md transition-all group">
-                    <div className="flex items-center gap-3">
-                      <img src=${u.avatar} className="w-10 h-10 rounded-xl object-cover border border-gray-100" />
-                      <div>
-                        <div className="text-sm font-bold text-gray-800">${u.nickname}</div>
-                        <div className="text-[10px] text-gray-400">${u.email}</div>
-                      </div>
+              ${users.map(u => html`
+                <div key=${u.email} className="flex items-center justify-between p-4 bg-white border rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <img src=${u.avatar} className="w-10 h-10 rounded-xl object-cover" />
+                    <div>
+                      <div className="text-sm font-bold">${u.nickname}</div>
+                      <div className="text-[10px] text-gray-400">${u.email}</div>
                     </div>
-                    ${!u.isKP && html`
-                      <button 
-                        onClick=${() => onKick(u.email)}
-                        className=${`px-3 py-1 rounded-lg text-xs font-bold transition-all ${config.bannedEmails.includes(u.email) ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white border border-red-100'}`}
-                      >
-                        ${config.bannedEmails.includes(u.email) ? '已封禁' : '封禁'}
-                      </button>
-                    `}
-                    ${u.isKP && html`<span className="text-[10px] font-bold text-amber-500 bg-amber-50 px-2 py-1 rounded-lg">管理者</span>`}
                   </div>
-                `)}
-              </div>
+                  ${!u.isKP && html`
+                    <button 
+                      onClick=${() => onKick(u.email)}
+                      className=${`px-3 py-1 rounded-lg text-xs font-bold ${config.bannedEmails.includes(u.email) ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-500'}`}
+                    >
+                      ${config.bannedEmails.includes(u.email) ? '已封禁' : '封禁'}
+                    </button>
+                  `}
+                </div>
+              `)}
             </div>
           `}
         </div>
