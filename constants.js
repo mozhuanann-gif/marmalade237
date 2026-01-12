@@ -2,9 +2,9 @@
 export const ADMIN_EMAIL = '237';
 
 export const DEFAULT_CONFIG = {
-  themeColor: '#F59E0B', // Koi Gold
+  themeColor: '#F59E0B',
   backgroundImage: '', 
-  logoImage: '', // Empty means use default "锦" icon
+  logoImage: '',
   isWhiteMode: true,
   bannedEmails: [],
   templates: {
@@ -23,7 +23,6 @@ export const DEFAULT_CONFIG = {
   }
 };
 
-// Thematic Koi avatars
 export const AVATARS = [
   'https://api.dicebear.com/7.x/shapes/svg?seed=koi1&backgroundColor=f59e0b',
   'https://api.dicebear.com/7.x/shapes/svg?seed=koi2&backgroundColor=fbbf24',
