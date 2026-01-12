@@ -1,23 +1,30 @@
 
 export const rollDice = (formula = '1d100') => {
   let f = formula.toLowerCase().trim();
-  // 处理 .r20 这种简写
+  // 处理 .r23 这种直接跟数字的情况
   if (/^\d+$/.test(f)) f = `1d${f}`;
   if (f.startsWith('d')) f = '1' + f;
   
-  const match = f.match(/(\d+)d(\d+)([+-]\d+)?/);
-  if (!match) return { total: Math.floor(Math.random() * 100) + 1, detail: '1d100' };
+  // 匹配 NdM+X 或 NdM-X 或 NdM
+  const match = f.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+  
+  if (!match) {
+    // 降级逻辑：如果只是纯数字，当做 1d[数字]
+    if (/^\d+$/.test(f)) {
+      const sides = parseInt(f);
+      const r = Math.floor(Math.random() * sides) + 1;
+      return { total: r, detail: `1d${sides}` };
+    }
+    return { total: Math.floor(Math.random() * 100) + 1, detail: '1d100' };
+  }
 
   const count = parseInt(match[1]) || 1;
   const sides = parseInt(match[2]);
   const modifier = parseInt(match[3]) || 0;
 
   let total = 0;
-  const rolls = [];
   for (let i = 0; i < count; i++) {
-    const r = Math.floor(Math.random() * sides) + 1;
-    rolls.push(r);
-    total += r;
+    total += Math.floor(Math.random() * sides) + 1;
   }
   total += modifier;
 
