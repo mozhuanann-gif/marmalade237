@@ -4,7 +4,7 @@ import htm from 'htm';
 
 const html = htm.bind(React.createElement);
 
-const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKick, onClose }) => {
+const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onClearHistory, onKick, onClose }) => {
   const [activeTab, setActiveTab] = useState('ui');
   const [newDeckName, setNewDeckName] = useState('');
   const [newDeckContent, setNewDeckContent] = useState('');
@@ -47,17 +47,9 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
 
   const translateKey = (key) => {
     const map = {
-      CRITICAL: '大成功',
-      EXTREME: '极难成功',
-      HARD: '困难成功',
-      SUCCESS: '成功',
-      FAILURE: '失败',
-      FUMBLE: '大失败',
-      jrrp: '今日运势 (jrrp)',
-      coc_gen: '人物属性生成',
-      draw: '牌堆抽卡',
-      sc_success: '理智检定成功',
-      sc_failure: '理智检定失败'
+      CRITICAL: '大成功', EXTREME: '极难成功', HARD: '困难成功',
+      SUCCESS: '成功', FAILURE: '失败', FUMBLE: '大失败',
+      jrrp: '今日运势', coc_gen: '人物属性生成', draw: '牌堆抽卡'
     };
     return map[key] || key;
   };
@@ -69,20 +61,20 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
         
         <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
           <div>
-            <h2 className="text-xl font-bold text-gray-800">KP 控制台</h2>
-            <p className="text-xs text-gray-500">管理环境与调查员</p>
+            <h2 className="text-xl font-bold text-gray-800">KP 控制中心</h2>
+            <p className="text-xs text-gray-500">掌握模组世界的终极权限</p>
           </div>
-          <button onClick=${onClose} className="p-2 hover:bg-gray-200 rounded-full">✕</button>
+          <button onClick=${onClose} className="p-2 hover:bg-gray-200 rounded-full transition-all text-xl">✕</button>
         </div>
 
-        <div className="flex bg-gray-100 px-2 pt-2 gap-1">
+        <div className="flex bg-gray-100 px-2 pt-2 gap-1 overflow-x-auto">
           ${[
             { id: 'ui', label: '视觉' },
             { id: 'templates', label: '话术' },
             { id: 'decks', label: '牌堆' },
             { id: 'users', label: '调查员' }
           ].map(t => html`
-            <button key=${t.id} onClick=${() => setActiveTab(t.id)} className=${`px-4 py-2 rounded-t-lg text-xs font-bold transition-all ${activeTab === t.id ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500'}`}>
+            <button key=${t.id} onClick=${() => setActiveTab(t.id)} className=${`px-5 py-2 whitespace-nowrap rounded-t-lg text-xs font-bold transition-all ${activeTab === t.id ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               ${t.label}
             </button>
           `)}
@@ -92,12 +84,20 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           ${activeTab === 'ui' && html`
             <div className="space-y-6">
               <section>
-                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">场景背景</h3>
-                <input type="file" onChange=${handleBgUpload} className="block w-full text-xs" accept="image/*" />
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">世界背景图</h3>
+                <div className="flex gap-4 items-center">
+                  <input type="file" onChange=${handleBgUpload} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" accept="image/*" />
+                  ${config.backgroundImage && html`<button onClick=${() => onUpdateConfig({...config, backgroundImage: ''})} className="text-red-500 text-xs font-bold">移除</button>`}
+                </div>
               </section>
               <section>
-                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase">Logo</h3>
-                <input type="file" onChange=${handleLogoUpload} className="block w-full text-xs" accept="image/*" />
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">系统标志 (Logo)</h3>
+                <input type="file" onChange=${handleLogoUpload} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" accept="image/*" />
+              </section>
+              <section className="pt-4 border-t border-gray-100">
+                <button onClick=${() => { if(confirm('确定要清空所有聊天记录吗？')) onClearHistory(); }} className="w-full py-3 bg-red-50 text-red-500 rounded-xl font-bold text-sm border border-red-100 hover:bg-red-500 hover:text-white transition-all">
+                  清空所有会话记录
+                </button>
               </section>
             </div>
           `}
@@ -105,7 +105,7 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           ${activeTab === 'templates' && html`
             <div className="space-y-6">
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[10px] text-amber-700 italic">
-                提示：可以使用 {user} (玩家名), {roll} (点数), {attributes} (属性) 等占位符。
+                可用占位符：{user} (玩家名), {roll} (掷骰结果), {name} (技能名), {attributes} (属性列表)
               </div>
               ${Object.entries(config.templates).map(([key, value]) => html`
                 <div key=${key} className="space-y-2">
@@ -113,7 +113,7 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
                   <textarea 
                     value=${value} 
                     onChange=${e => updateTemplate(key, e.target.value)}
-                    className="w-full p-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-amber-400 focus:bg-white outline-none text-sm min-h-[80px] transition-all"
+                    className="w-full p-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-amber-400 outline-none text-sm min-h-[70px]"
                   ></textarea>
                 </div>
               `)}
@@ -121,15 +121,18 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           `}
 
           ${activeTab === 'decks' && html`
-            <div className="space-y-4">
-              <input placeholder="牌堆名" value=${newDeckName} onChange=${e => setNewDeckName(e.target.value)} className="w-full p-2 border rounded" />
-              <textarea placeholder="内容 [A, B, C]" value=${newDeckContent} onChange=${e => setNewDeckContent(e.target.value)} className="w-full p-2 border rounded h-32"></textarea>
-              <button onClick=${addDeck} className="w-full py-2 bg-amber-600 text-white rounded">添加</button>
-              <div className="mt-4 space-y-2">
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-4">
+                <h4 className="text-xs font-bold text-gray-700">新增牌堆</h4>
+                <input placeholder="牌堆名" value=${newDeckName} onChange=${e => setNewDeckName(e.target.value)} className="w-full p-3 rounded-xl border border-gray-200 text-sm" />
+                <textarea placeholder="内容 [项目A, 项目B, 项目C]" value=${newDeckContent} onChange=${e => setNewDeckContent(e.target.value)} className="w-full p-3 rounded-xl border border-gray-200 text-sm h-24"></textarea>
+                <button onClick=${addDeck} className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold">添加</button>
+              </div>
+              <div className="space-y-2">
                 ${decks.map(d => html`
-                  <div key=${d.id} className="p-3 bg-gray-50 rounded border flex justify-between">
-                    <span>${d.name}</span>
-                    <button onClick=${() => deleteDeck(d.id)} className="text-red-500 text-xs">删除</button>
+                  <div key=${d.id} className="p-3 bg-white border border-gray-100 rounded-xl flex justify-between items-center group">
+                    <span className="text-sm font-bold">.draw ${d.name}</span>
+                    <button onClick=${() => deleteDeck(d.id)} className="text-red-400 hover:text-red-600 text-xs">删除</button>
                   </div>
                 `)}
               </div>
@@ -137,9 +140,9 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
           `}
 
           ${activeTab === 'users' && html`
-            <div className="space-y-4">
+            <div className="space-y-3">
               ${users.map(u => html`
-                <div key=${u.email} className="flex items-center justify-between p-4 bg-white border rounded-2xl">
+                <div key=${u.email} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-2xl">
                   <div className="flex items-center gap-3">
                     <img src=${u.avatar} className="w-10 h-10 rounded-xl object-cover" />
                     <div>
@@ -148,10 +151,7 @@ const AdminPanel = ({ config, decks, users, onUpdateConfig, onUpdateDecks, onKic
                     </div>
                   </div>
                   ${!u.isKP && html`
-                    <button 
-                      onClick=${() => onKick(u.email)}
-                      className=${`px-3 py-1 rounded-lg text-xs font-bold ${config.bannedEmails.includes(u.email) ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-500'}`}
-                    >
+                    <button onClick=${() => onKick(u.email)} className=${`px-3 py-1 rounded-lg text-xs font-bold ${config.bannedEmails.includes(u.email) ? 'bg-gray-100 text-gray-400' : 'bg-red-50 text-red-500'}`}>
                       ${config.bannedEmails.includes(u.email) ? '已封禁' : '封禁'}
                     </button>
                   `}
