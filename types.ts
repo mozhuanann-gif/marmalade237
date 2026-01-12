@@ -1,51 +1,65 @@
+
 export enum SuccessLevel {
-  CRITICAL = '大成功',
-  EXTREME = '极难成功',
-  HARD = '困难成功',
-  REGULAR = '成功',
-  FAILURE = '失败',
-  FUMBLE = '大失败'
+  CRITICAL = 'CRITICAL',
+  EXTREME = 'EXTREME',
+  HARD = 'HARD',
+  SUCCESS = 'SUCCESS',
+  FAILURE = 'FAILURE',
+  FUMBLE = 'FUMBLE'
 }
 
-export enum MessageType {
-  ROLL = 'ROLL',
-  SYSTEM = 'SYSTEM',
-  SANITY = 'SANITY',
-  LUCK = 'LUCK',
-  HELP = 'HELP',
-  DRAW = 'DRAW'
-}
-
-export interface Player {
+export interface User {
   email: string;
-  name: string;
+  nickname: string;
   avatar: string;
-  isAdmin?: boolean;
+  isKP: boolean;
+  attributes?: CharacterAttributes;
 }
 
-export interface AppConfig {
-  backgroundUrl: string;
-  themeColor: string;
+export interface CharacterAttributes {
+  STR: number;
+  CON: number;
+  DEX: number;
+  APP: number;
+  POW: number;
+  LUCK: number;
+  SIZ: number;
+  INT: number;
+  EDU: number;
+  SAN: number;
 }
 
 export interface Message {
   id: string;
-  type: MessageType;
+  userId: string;
+  userNickname: string;
+  userAvatar: string;
+  content: string;
+  command?: string;
   timestamp: number;
-  playerName: string;
-  playerAvatar: string;
-  playerEmail: string;
-  content: string; 
-  rollData?: {
-    label: string;
-    formula: string;
-    total: number;
-    successLevel?: SuccessLevel;
-  };
+  isHidden?: boolean; // For .rh commands
 }
 
-export interface CharacterStat {
+export interface Deck {
   id: string;
   name: string;
-  value: number;
+  content: string; // The raw template format
+}
+
+export interface KPConfig {
+  themeColor: string;
+  backgroundImage: string;
+  logoImage: string;
+  isWhiteMode: boolean;
+  templates: {
+    [key: string]: string; // Keyed by SuccessLevel or action
+  };
+  bannedEmails: string[];
+}
+
+export interface AppState {
+  history: Message[];
+  decks: Deck[];
+  config: KPConfig;
+  users: User[];
 }
