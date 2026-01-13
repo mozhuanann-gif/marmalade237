@@ -8,34 +8,48 @@ export const initNetwork = (id, isHost, callbacks) => {
   onMessageReceived = callbacks.onMessage;
   onConnectionChanged = callbacks.onStatusChange;
 
-  if (peer) peer.destroy();
+  if (peer) {
+    try { peer.destroy(); } catch(e) {}
+  }
 
-  // 使用默认的 PeerJS 公用服务器
-  peer = new window.Peer(id, {
-    debug: 1
-  });
-
-  peer.on('open', (openedId) => {
-    onConnectionChanged('READY', openedId);
-  });
-
-  peer.on('error', (err) => {
-    console.error('Peer Error:', err.type);
-    onConnectionChanged('ERROR', err.type);
-  });
-
-  if (isHost) {
-    peer.on('connection', (conn) => {
-      conn.on('open', () => {
-        connections.push(conn);
-        onConnectionChanged('PLAYER_JOINED', conn.peer);
-      });
-      conn.on('data', (data) => onMessageReceived(data, conn));
-      conn.on('close', () => {
-        connections = connections.filter(c => c !== conn);
-        onConnectionChanged('PLAYER_LEFT', conn.peer);
-      });
+  // 核心修复：增加配置以减少对本地存储的依赖，并捕获初始化错误
+  try {
+    peer = new window.Peer(id, {
+      debug: 1,
+      config: {
+        'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]
+      }
     });
+
+    peer.on('open', (openedId) => {
+      onConnectionChanged('READY', openedId);
+    });
+
+    peer.on('error', (err) => {
+      console.error('PeerJS Error:', err.type);
+      onConnectionChanged('ERROR', err.type);
+      // 如果是因为存储被拦截，提示用户
+      if (err.type === 'browser-incompatible') {
+        alert('浏览器拦截了联机插件，请关闭“严格跟踪保护”或更换浏览器。');
+      }
+    });
+
+    if (isHost) {
+      peer.on('connection', (conn) => {
+        conn.on('open', () => {
+          connections.push(conn);
+          onConnectionChanged('PLAYER_JOINED', conn.peer);
+        });
+        conn.on('data', (data) => onMessageReceived(data, conn));
+        conn.on('close', () => {
+          connections = connections.filter(c => c !== conn);
+          onConnectionChanged('PLAYER_LEFT', conn.peer);
+        });
+      });
+    }
+  } catch (error) {
+    console.error('PeerJS Initialization Failed:', error);
+    onConnectionChanged('ERROR', 'INIT_FAILED');
   }
 };
 
@@ -43,7 +57,14 @@ export const connectToHost = (hostId, callbacks) => {
   onMessageReceived = callbacks.onMessage;
   onConnectionChanged = callbacks.onStatusChange;
 
-  if (!peer) peer = new window.Peer();
+  if (!peer) {
+    try {
+      peer = new window.Peer();
+    } catch(e) {
+      onConnectionChanged('ERROR', 'INIT_FAILED');
+      return;
+    }
+  }
 
   peer.on('open', () => {
     const conn = peer.connect(hostId);
@@ -63,7 +84,7 @@ export const connectToHost = (hostId, callbacks) => {
 export const broadcast = (data) => {
   connections.forEach(conn => {
     if (conn && conn.open) {
-      conn.send(data);
+      try { conn.send(data); } catch(e) {}
     }
   });
 };
@@ -71,6 +92,6 @@ export const broadcast = (data) => {
 export const sendToHost = (data) => {
   const hostConn = connections[0];
   if (hostConn && hostConn.open) {
-    hostConn.send(data);
+    try { hostConn.send(data); } catch(e) {}
   }
 };
