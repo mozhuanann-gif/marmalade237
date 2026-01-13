@@ -18,16 +18,26 @@ const App = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [netStatus, setNetStatus] = useState({ status: 'OFFLINE', roomId: '' });
   
-  // 使用 Ref 存储最新的 appState，避免 useCallback 闭包问题
   const stateRef = useRef(appState);
   useEffect(() => { stateRef.current = appState; }, [appState]);
 
   // 网络数据分发器
   const handleNetworkData = useCallback((data, conn) => {
     if (data.type === 'SYNC_STATE') {
-      console.log('Received Sync Data');
-      setAppState(prev => ({ ...prev, ...data.payload }));
-      saveState(data.payload);
+      setAppState(prev => {
+        const payload = data.payload;
+        // 消息去重合并 logic
+        const existingIds = new Set(prev.history.map(m => m.id));
+        const newHistory = [...prev.history];
+        if (payload.history) {
+          payload.history.forEach(m => {
+            if (!existingIds.has(m.id)) newHistory.push(m);
+          });
+        }
+        const next = { ...prev, ...payload, history: newHistory.sort((a,b) => a.timestamp - b.timestamp) };
+        saveState(next);
+        return next;
+      });
     } else if (data.type === 'PLAYER_COMMAND') {
       handleCommand(data.payload.raw, data.payload.user);
     }
@@ -35,17 +45,17 @@ const App = () => {
 
   // 状态变更监听器
   const onStatusChange = useCallback((s, detail) => {
-    setNetStatus(prev => ({ 
-      status: s, 
-      roomId: detail || prev.roomId 
-    }));
+    setNetStatus(prev => ({ status: s, roomId: detail || prev.roomId }));
     
-    // 如果是主机，且有新玩家加入，广播当前 stateRef 中的数据
+    // 主机逻辑：玩家加入时发送数据
     if (s === 'PLAYER_JOINED' && stateRef.current) {
-      console.log('Broadcasting to new player...');
       network.broadcast({ type: 'SYNC_STATE', payload: stateRef.current });
+      // 500ms 后补发一次，防止网络瞬时抖动
+      setTimeout(() => {
+        network.broadcast({ type: 'SYNC_STATE', payload: stateRef.current });
+      }, 500);
     }
-  }, []); // 移除不必要的依赖
+  }, []);
 
   const handleLogin = (u, targetRoomId) => {
     setUser(u);
@@ -60,7 +70,6 @@ const App = () => {
   const handleCommand = useCallback((raw, executor = user) => {
     if (!executor) return;
 
-    // 如果是客户端，将命令发送给主机执行
     if (netStatus.status === 'CONNECTED_TO_HOST' && !executor.isKP) {
       network.sendToHost({ type: 'PLAYER_COMMAND', payload: { raw, user: executor } });
       return;
@@ -104,13 +113,9 @@ const App = () => {
     if (content) {
       const msg = { 
         id: Date.now().toString() + Math.random().toString(36).substr(2, 4), 
-        userId: executor.email, 
-        userNickname: executor.nickname, 
+        userId: executor.email, userNickname: executor.nickname, 
         userAvatar: stateRef.current.config.logoImage || executor.avatar, 
-        content, 
-        command: raw, 
-        timestamp: Date.now(), 
-        isHidden 
+        content, command: raw, timestamp: Date.now(), isHidden 
       };
       const newState = { ...stateRef.current, history: [...stateRef.current.history, msg] };
       setAppState(newState);
@@ -127,11 +132,16 @@ const App = () => {
     });
   };
 
-  if (!user) return html`<${Login} onLogin=${handleLogin} bannedEmails=${appState.config.bannedEmails} />`;
+  const retryConnection = () => {
+    if (user?.isKP) startHost();
+    else if (window.lastTargetRoomId) handleLogin(user, window.lastTargetRoomId);
+  };
+
+  if (!user) return html`<${Login} onLogin=${(u, r) => { window.lastTargetRoomId = r; handleLogin(u, r); }} bannedEmails=${appState.config.bannedEmails} />`;
 
   const getStatusInfo = () => {
     switch(netStatus.status) {
-      case 'ERROR': return { color: 'bg-red-500', text: netStatus.roomId || '连接受阻' };
+      case 'ERROR': return { color: 'bg-red-500', text: netStatus.roomId || '连接异常' };
       case 'CONNECTING': return { color: 'bg-amber-400', text: `正在接入: ${netStatus.roomId}` };
       case 'READY':
       case 'CONNECTED_TO_HOST':
@@ -158,7 +168,10 @@ const App = () => {
             <h1 className="font-bold text-gray-800 tracking-tight text-sm">锦鲤终端</h1>
             <div className="flex items-center gap-2">
               <span className=${`w-2 h-2 rounded-full ${status.color} ${netStatus.status !== 'OFFLINE' ? 'animate-pulse' : ''}`}></span>
-              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest font-mono">${status.text}</span>
+              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest font-mono">
+                ${status.text}
+                ${netStatus.status === 'ERROR' && html`<button onClick=${retryConnection} className="ml-2 text-amber-600 underline">重试</button>`}
+              </span>
             </div>
           </div>
         </div>
@@ -176,6 +189,7 @@ const App = () => {
           config=${appState.config} decks=${appState.decks} users=${appState.users}
           onUpdateConfig=${c => { saveState({config: c}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onUpdateDecks=${d => { saveState({decks: d}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
+          onClearHistory=${() => { saveState({history: []}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: {history: []}}); }}
           onImport=${data => { saveState(data); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onKick=${e => {
             const list = stateRef.current.config.bannedEmails || [];
