@@ -18,28 +18,34 @@ const App = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [netStatus, setNetStatus] = useState({ status: 'OFFLINE', roomId: '' });
 
-  // 网络同步逻辑
+  // 网络数据分发器
   const handleNetworkData = useCallback((data, conn) => {
     if (data.type === 'SYNC_STATE') {
+      console.log('Received Sync Data');
       setAppState(prev => ({ ...prev, ...data.payload }));
       saveState(data.payload);
     } else if (data.type === 'PLAYER_COMMAND') {
       handleCommand(data.payload.raw, data.payload.user);
-    } else if (data.type === 'INIT_REQ' && user?.isKP) {
+    }
+  }, [user]);
+
+  // 状态变更监听器（主机自动同步逻辑在这里）
+  const onStatusChange = useCallback((s, detail) => {
+    setNetStatus({ status: s, roomId: detail || netStatus.roomId });
+    
+    // 如果是主机，且有新玩家加入，立即广播当前状态
+    if (s === 'PLAYER_JOINED' && user?.isKP) {
+      console.log('New Player Joined, broadcasting state...');
       network.broadcast({ type: 'SYNC_STATE', payload: appState });
     }
-  }, [user, appState]);
+  }, [user, appState, netStatus.roomId]);
 
-  // 处理登录并触发连接
   const handleLogin = (u, targetRoomId) => {
     setUser(u);
     if (targetRoomId && !u.isKP) {
       network.connectToHost(targetRoomId, {
         onMessage: handleNetworkData,
-        onStatusChange: (s, detail) => {
-          setNetStatus({ status: s, roomId: targetRoomId });
-          if (s === 'CONNECTED_TO_HOST') network.sendToHost({ type: 'INIT_REQ' });
-        }
+        onStatusChange: onStatusChange
       });
     }
   };
@@ -109,7 +115,7 @@ const App = () => {
     const rid = `KOI-${Math.floor(1000 + Math.random() * 8999)}`;
     network.initNetwork(rid, true, {
       onMessage: handleNetworkData,
-      onStatusChange: (s, detail) => setNetStatus({ status: s, roomId: detail })
+      onStatusChange: onStatusChange
     });
   };
 
@@ -117,7 +123,7 @@ const App = () => {
 
   const getStatusInfo = () => {
     switch(netStatus.status) {
-      case 'ERROR': return { color: 'bg-red-500', text: '联机受阻 (请检查设置)' };
+      case 'ERROR': return { color: 'bg-red-500', text: netStatus.roomId || '连接异常' };
       case 'CONNECTING': return { color: 'bg-amber-400', text: `正在接入: ${netStatus.roomId}` };
       case 'READY':
       case 'CONNECTED_TO_HOST':
