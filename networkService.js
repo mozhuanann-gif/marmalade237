@@ -4,8 +4,8 @@ let connections = [];
 let onMessageReceived = null;
 let onConnectionChanged = null;
 
-// 生成一个随机短 ID 作为备用
-const generateId = () => Math.random().toString(36).substr(2, 6).toUpperCase();
+// 生成一个纯内存 ID，完全不访问 localStorage
+const generateSessionId = () => 'SESSION-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
 export const initNetwork = (id, isHost, callbacks) => {
   onMessageReceived = callbacks.onMessage;
@@ -15,14 +15,19 @@ export const initNetwork = (id, isHost, callbacks) => {
     try { peer.destroy(); } catch(e) {}
   }
 
-  onConnectionChanged('CONNECTING', '正在初始化...');
+  onConnectionChanged('CONNECTING', '初始化信令...');
 
   try {
-    // 强制配置：不使用本地存储持久化 ID，防止被跟踪保护拦截
-    peer = new window.Peer(id, {
-      debug: 2,
+    // 强制指定一个随机的客户端 ID，避免 PeerJS 尝试访问被拦截的存储
+    const peerId = isHost ? id : generateSessionId();
+    
+    peer = new window.Peer(peerId, {
+      debug: 1, // 降低调试级别减少干扰
       config: {
-        'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]
+        'iceServers': [
+          { 'urls': 'stun:stun.l.google.com:19302' },
+          { 'urls': 'stun:stun1.l.google.com:19302' }
+        ]
       }
     });
 
@@ -31,12 +36,12 @@ export const initNetwork = (id, isHost, callbacks) => {
     });
 
     peer.on('error', (err) => {
-      console.error('PeerJS Error:', err.type, err);
-      // 如果 ID 冲突，尝试加后缀重试
-      if (err.type === 'id-taken') {
-        initNetwork(id + '-' + generateId(), isHost, callbacks);
-      } else if (err.type === 'browser-incompatible' || err.type === 'unavailable-id') {
-        onConnectionChanged('ERROR', '插件受阻');
+      console.warn('Network Error:', err.type);
+      if (err.type === 'browser-incompatible') {
+        onConnectionChanged('ERROR', '存储被拦截');
+      } else if (err.type === 'id-taken') {
+        // 如果 ID 冲突，主机模式尝试加随机后缀
+        if (isHost) initNetwork(id + '-' + Math.floor(Math.random()*100), isHost, callbacks);
       } else {
         onConnectionChanged('ERROR', err.type);
       }
@@ -46,7 +51,9 @@ export const initNetwork = (id, isHost, callbacks) => {
       peer.on('connection', (conn) => {
         conn.on('open', () => {
           connections.push(conn);
+          // 关键改进：一旦连接打开，主机立即通知 UI，UI 随后会触发广播
           onConnectionChanged('PLAYER_JOINED', conn.peer);
+          // 主机收到新连接后，App.js 会捕捉到 PLAYER_JOINED 状态并发送 SYNC_STATE
         });
         conn.on('data', (data) => onMessageReceived(data, conn));
         conn.on('close', () => {
@@ -56,7 +63,7 @@ export const initNetwork = (id, isHost, callbacks) => {
       });
     }
   } catch (error) {
-    onConnectionChanged('ERROR', 'INIT_FAILED');
+    onConnectionChanged('ERROR', 'FAILED');
   }
 };
 
@@ -64,38 +71,45 @@ export const connectToHost = (hostId, callbacks) => {
   onMessageReceived = callbacks.onMessage;
   onConnectionChanged = callbacks.onStatusChange;
 
-  onConnectionChanged('CONNECTING', hostId);
-
-  // 客户端使用随机 ID 初始化 Peer，减少拦截概率
-  if (!peer) {
-    peer = new window.Peer();
+  if (!peer || peer.destroyed) {
+    initNetwork(null, false, {
+      onMessage: onMessageReceived,
+      onStatusChange: (s, d) => {
+        if (s === 'READY') {
+          performConnection(hostId);
+        } else {
+          onConnectionChanged(s, d);
+        }
+      }
+    });
+  } else {
+    performConnection(hostId);
   }
+};
 
-  peer.on('open', () => {
-    const conn = peer.connect(hostId, {
-      reliable: true
-    });
-    
-    conn.on('open', () => {
-      connections = [conn];
-      onConnectionChanged('CONNECTED_TO_HOST', hostId);
-    });
-    
-    conn.on('data', (data) => onMessageReceived(data, conn));
-    
-    conn.on('close', () => {
-      onConnectionChanged('OFFLINE');
-      connections = [];
-    });
+const performConnection = (hostId) => {
+  onConnectionChanged('CONNECTING', hostId);
+  const conn = peer.connect(hostId, { reliable: true });
 
-    conn.on('error', (err) => {
-      onConnectionChanged('ERROR', '连接失败');
-    });
+  const timeout = setTimeout(() => {
+    if (!conn.open) {
+      onConnectionChanged('ERROR', '连接超时');
+      conn.close();
+    }
+  }, 10000);
+
+  conn.on('open', () => {
+    clearTimeout(timeout);
+    connections = [conn];
+    onConnectionChanged('CONNECTED_TO_HOST', hostId);
   });
-
-  peer.on('error', (err) => {
-    onConnectionChanged('ERROR', '初始化失败');
+  
+  conn.on('data', (data) => onMessageReceived(data, conn));
+  conn.on('close', () => {
+    onConnectionChanged('OFFLINE');
+    connections = [];
   });
+  conn.on('error', () => onConnectionChanged('ERROR', '连接断开'));
 };
 
 export const broadcast = (data) => {
