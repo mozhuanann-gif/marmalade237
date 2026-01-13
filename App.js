@@ -18,6 +18,7 @@ const App = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [netStatus, setNetStatus] = useState({ status: 'OFFLINE', roomId: '' });
 
+  // 网络同步逻辑
   const handleNetworkData = useCallback((data, conn) => {
     if (data.type === 'SYNC_STATE') {
       setAppState(prev => ({ ...prev, ...data.payload }));
@@ -28,6 +29,20 @@ const App = () => {
       network.broadcast({ type: 'SYNC_STATE', payload: appState });
     }
   }, [user, appState]);
+
+  // 处理登录并触发连接
+  const handleLogin = (u, targetRoomId) => {
+    setUser(u);
+    if (targetRoomId && !u.isKP) {
+      network.connectToHost(targetRoomId, {
+        onMessage: handleNetworkData,
+        onStatusChange: (s, detail) => {
+          setNetStatus({ status: s, roomId: targetRoomId });
+          if (s === 'CONNECTED_TO_HOST') network.sendToHost({ type: 'INIT_REQ' });
+        }
+      });
+    }
+  };
 
   const handleCommand = useCallback((raw, executor = user) => {
     if (!executor) return;
@@ -98,31 +113,20 @@ const App = () => {
     });
   };
 
-  const joinRoom = (rid) => {
-    network.connectToHost(rid, {
-      onMessage: handleNetworkData,
-      onStatusChange: (s, detail) => {
-        setNetStatus({ status: s, roomId: rid });
-        if (s === 'CONNECTED_TO_HOST') network.sendToHost({ type: 'INIT_REQ' });
-      }
-    });
+  if (!user) return html`<${Login} onLogin=${handleLogin} bannedEmails=${appState.config.bannedEmails} />`;
+
+  const getStatusInfo = () => {
+    switch(netStatus.status) {
+      case 'ERROR': return { color: 'bg-red-500', text: '联机受阻 (请检查设置)' };
+      case 'CONNECTING': return { color: 'bg-amber-400', text: `正在接入: ${netStatus.roomId}` };
+      case 'READY':
+      case 'CONNECTED_TO_HOST':
+      case 'PLAYER_JOINED': return { color: 'bg-green-500', text: `在线: ${netStatus.roomId}` };
+      default: return { color: 'bg-gray-300', text: '离线模式' };
+    }
   };
 
-  if (!user) return html`<${Login} onLogin=${setUser} onJoinRoom=${joinRoom} bannedEmails=${appState.config.bannedEmails} />`;
-
-  // 状态解析逻辑
-  const getStatusColor = () => {
-    if (netStatus.status === 'ERROR') return 'bg-red-500';
-    if (netStatus.status.includes('CONNECTED') || netStatus.status === 'READY') return 'bg-green-500';
-    return 'bg-gray-300';
-  };
-
-  const getStatusText = () => {
-    if (netStatus.status === 'ERROR') return '插件受阻 (检查设置)';
-    if (netStatus.status === 'OFFLINE') return 'OFFLINE MODE';
-    return `ONLINE: ${netStatus.roomId}`;
-  };
-
+  const status = getStatusInfo();
   const bgStyle = appState.config.backgroundImage ? { 
     backgroundImage: `url(${appState.config.backgroundImage})`, 
     backgroundSize: 'cover', backgroundPosition: 'center' 
@@ -134,20 +138,18 @@ const App = () => {
         <div className="flex items-center gap-4">
           ${appState.config.logoImage ? 
             html`<img src=${appState.config.logoImage} className="w-10 h-10 rounded-2xl object-cover" />` : 
-            html`<div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-white font-bold">锦</div>`
+            html`<div className="w-10 h-10 rounded-2xl bg-amber-500 flex items-center justify-center text-white font-bold shadow-sm">锦</div>`
           }
           <div>
             <h1 className="font-bold text-gray-800 tracking-tight text-sm">锦鲤终端</h1>
             <div className="flex items-center gap-2">
-              <span className=${`w-2 h-2 rounded-full ${getStatusColor()} ${netStatus.status !== 'OFFLINE' ? 'animate-pulse' : ''}`}></span>
-              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest font-mono">
-                ${getStatusText()}
-              </span>
+              <span className=${`w-2 h-2 rounded-full ${status.color} ${netStatus.status !== 'OFFLINE' ? 'animate-pulse' : ''}`}></span>
+              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest font-mono">${status.text}</span>
             </div>
           </div>
         </div>
         <div className="flex gap-3">
-          ${user.isKP && netStatus.status === 'OFFLINE' && html`<button onClick=${startHost} className="px-3 py-1.5 bg-amber-500 text-white rounded-xl text-[10px] font-bold">开启联机</button>`}
+          ${user.isKP && netStatus.status === 'OFFLINE' && html`<button onClick=${startHost} className="px-3 py-1.5 bg-amber-500 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-amber-200 active:scale-95 transition-all">开启联机大厅</button>`}
           ${user.isKP && html`<button onClick=${() => setIsAdminOpen(true)} className="px-3 py-1.5 bg-gray-50 text-gray-600 rounded-xl text-[10px] font-bold border border-gray-100">控制台</button>`}
           <button onClick=${() => window.location.reload()} className="p-2 text-gray-300 hover:text-amber-500 transition-colors text-xs">登出</button>
         </div>
@@ -160,7 +162,7 @@ const App = () => {
           config=${appState.config} decks=${appState.decks} users=${appState.users}
           onUpdateConfig=${c => { saveState({config: c}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onUpdateDecks=${d => { saveState({decks: d}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
-          onImport=${data => { saveState(data); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: data}); }}
+          onImport=${data => { saveState(data); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onKick=${e => {
             const list = appState.config.bannedEmails || [];
             const newList = [...list, e];
