@@ -1,11 +1,10 @@
 
-// 使用闭包变量存储当前活动的回调
 let _activePeer = null;
 let _activeConnections = [];
 let _onDataCallback = null;
 let _onStatusCallback = null;
 
-const generateId = () => 'SESSION-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+const generateId = () => 'KOI-' + Math.random().toString(36).substr(2, 6).toUpperCase();
 
 export const initNetwork = (id, isHost, callbacks) => {
   _onDataCallback = callbacks.onMessage;
@@ -15,31 +14,37 @@ export const initNetwork = (id, isHost, callbacks) => {
     try { _activePeer.destroy(); } catch(e) {}
   }
 
-  if (_onStatusCallback) _onStatusCallback('CONNECTING', '正在初始化...');
+  if (_onStatusCallback) _onStatusCallback('CONNECTING', '接入信令中...');
 
   try {
     const peerId = isHost ? id : generateId();
+    
+    // 显式指定配置，尽量规避部分存储拦截导致的问题
     _activePeer = new window.Peer(peerId, {
       debug: 1,
       config: {
         'iceServers': [
           { 'urls': 'stun:stun.l.google.com:19302' },
-          { 'urls': 'stun:stun1.l.google.com:19302' }
+          { 'urls': 'stun:stun1.l.google.com:19302' },
+          { 'urls': 'stun:stun2.l.google.com:19302' },
+          { 'urls': 'stun:stun.anyfirewall.com:3478' }
         ]
       }
     });
 
     _activePeer.on('open', (openedId) => {
+      console.log('Signal connected:', openedId);
       if (_onStatusCallback) _onStatusCallback('READY', openedId);
     });
 
     _activePeer.on('error', (err) => {
-      console.error('Peer Error:', err.type);
-      if (_onStatusCallback) {
-        if (err.type === 'browser-incompatible') _onStatusCallback('ERROR', '存储受阻');
-        else if (err.type === 'id-taken' && isHost) initNetwork(id + '-' + Math.floor(Math.random()*100), true, callbacks);
-        else _onStatusCallback('ERROR', err.type);
-      }
+      console.error('PeerJS Error:', err.type);
+      let msg = err.type;
+      if (err.type === 'peer-unavailable') msg = '房号不存在';
+      else if (err.type === 'network') msg = '网络连接超时';
+      else if (err.type === 'browser-incompatible') msg = '浏览器安全限制';
+      
+      if (_onStatusCallback) _onStatusCallback('ERROR', msg);
     });
 
     if (isHost) {
@@ -56,23 +61,25 @@ export const initNetwork = (id, isHost, callbacks) => {
       });
     }
   } catch (error) {
-    if (_onStatusCallback) _onStatusCallback('ERROR', 'FATAL');
+    if (_onStatusCallback) _onStatusCallback('ERROR', '初始化故障');
   }
 };
 
 export const connectToHost = (hostId, callbacks) => {
-  // 保存回调引用
   _onDataCallback = callbacks.onMessage;
   _onStatusCallback = callbacks.onStatusChange;
 
-  const performPeerConnect = (targetId) => {
-    if (_onStatusCallback) _onStatusCallback('CONNECTING', targetId);
+  const performConnect = (targetId) => {
+    if (_onStatusCallback) _onStatusCallback('CONNECTING', `建立隧道: ${targetId}`);
     
-    const conn = _activePeer.connect(targetId, { reliable: true });
+    const conn = _activePeer.connect(targetId, { 
+      reliable: true,
+      serialization: 'json'
+    });
     
     const timeout = setTimeout(() => {
-      if (!conn.open && _onStatusCallback) {
-        _onStatusCallback('ERROR', '连接超时');
+      if (!conn.open) {
+        if (_onStatusCallback) _onStatusCallback('ERROR', 'P2P 握手超时');
         conn.close();
       }
     }, 15000);
@@ -88,26 +95,18 @@ export const connectToHost = (hostId, callbacks) => {
       if (_onStatusCallback) _onStatusCallback('OFFLINE');
       _activeConnections = [];
     });
-    conn.on('error', () => {
-       if (_onStatusCallback) _onStatusCallback('ERROR', '连接异常');
-    });
   };
 
-  // 如果 Peer 未就绪，先初始化
   if (!_activePeer || _activePeer.destroyed) {
     initNetwork(null, false, {
       onMessage: _onDataCallback,
-      onStatusChange: (status, detail) => {
-        if (status === 'READY') {
-          performPeerConnect(hostId);
-        } else {
-          // 这里不再自调用，而是直接调用传入的原始回调
-          callbacks.onStatusChange(status, detail);
-        }
+      onStatusChange: (s, d) => {
+        if (s === 'READY') performConnect(hostId);
+        else callbacks.onStatusChange(s, d);
       }
     });
   } else {
-    performPeerConnect(hostId);
+    performConnect(hostId);
   }
 };
 
