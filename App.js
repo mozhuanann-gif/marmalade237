@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import htm from 'htm';
 import { loadState, saveState, deleteMessage } from './storageService.js';
 import { rollDice, getSuccessLevel, generateCoCAttributes, parseDeck, getJrrp } from './diceService.js';
@@ -17,6 +17,10 @@ const App = () => {
   const [appState, setAppState] = useState(loadState());
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [netStatus, setNetStatus] = useState({ status: 'OFFLINE', roomId: '' });
+  
+  // 使用 Ref 存储最新的 appState，避免 useCallback 闭包问题
+  const stateRef = useRef(appState);
+  useEffect(() => { stateRef.current = appState; }, [appState]);
 
   // 网络数据分发器
   const handleNetworkData = useCallback((data, conn) => {
@@ -29,16 +33,19 @@ const App = () => {
     }
   }, [user]);
 
-  // 状态变更监听器（主机自动同步逻辑在这里）
+  // 状态变更监听器
   const onStatusChange = useCallback((s, detail) => {
-    setNetStatus({ status: s, roomId: detail || netStatus.roomId });
+    setNetStatus(prev => ({ 
+      status: s, 
+      roomId: detail || prev.roomId 
+    }));
     
-    // 如果是主机，且有新玩家加入，立即广播当前状态
-    if (s === 'PLAYER_JOINED' && user?.isKP) {
-      console.log('New Player Joined, broadcasting state...');
-      network.broadcast({ type: 'SYNC_STATE', payload: appState });
+    // 如果是主机，且有新玩家加入，广播当前 stateRef 中的数据
+    if (s === 'PLAYER_JOINED' && stateRef.current) {
+      console.log('Broadcasting to new player...');
+      network.broadcast({ type: 'SYNC_STATE', payload: stateRef.current });
     }
-  }, [user, appState, netStatus.roomId]);
+  }, []); // 移除不必要的依赖
 
   const handleLogin = (u, targetRoomId) => {
     setUser(u);
@@ -53,6 +60,7 @@ const App = () => {
   const handleCommand = useCallback((raw, executor = user) => {
     if (!executor) return;
 
+    // 如果是客户端，将命令发送给主机执行
     if (netStatus.status === 'CONNECTED_TO_HOST' && !executor.isKP) {
       network.sendToHost({ type: 'PLAYER_COMMAND', payload: { raw, user: executor } });
       return;
@@ -77,16 +85,16 @@ const App = () => {
       if (match) {
         const roll = rollDice('1d100');
         const level = getSuccessLevel(roll.total, parseInt(match[2]));
-        content = (appState.config.templates[level] || '{user} 判定 {name}: {roll}')
+        content = (stateRef.current.config.templates[level] || '{user} 判定 {name}: {roll}')
           .replace('{user}', executor.nickname).replace('{name}', match[1]).replace('{roll}', `${roll.total}/${match[2]}`);
       }
     } else if (cmd === '.jrrp') {
-      content = appState.config.templates['jrrp'].replace('{user}', executor.nickname).replace('{roll}', getJrrp(executor.email));
+      content = stateRef.current.config.templates['jrrp'].replace('{user}', executor.nickname).replace('{roll}', getJrrp(executor.email));
     } else if (cmd === '.coc') {
         const attrs = generateCoCAttributes();
         const attrStr = Object.entries(attrs).filter(([k])=>k!=='SAN').map(([k,v])=>`${k}:${v}`).join(' ');
-        content = appState.config.templates['coc_gen'].replace('{user}', executor.nickname).replace('{attributes}', attrStr);
-        if (executor.email === user.email) {
+        content = stateRef.current.config.templates['coc_gen'].replace('{user}', executor.nickname).replace('{attributes}', attrStr);
+        if (executor.email === user?.email) {
            setUser(prev => ({...prev, attributes: attrs}));
         }
     } else {
@@ -95,21 +103,21 @@ const App = () => {
 
     if (content) {
       const msg = { 
-        id: Date.now().toString(), 
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 4), 
         userId: executor.email, 
         userNickname: executor.nickname, 
-        userAvatar: appState.config.logoImage || executor.avatar, 
+        userAvatar: stateRef.current.config.logoImage || executor.avatar, 
         content, 
         command: raw, 
         timestamp: Date.now(), 
         isHidden 
       };
-      const newState = { ...appState, history: [...appState.history, msg] };
+      const newState = { ...stateRef.current, history: [...stateRef.current.history, msg] };
       setAppState(newState);
       saveState(newState);
-      if (user.isKP) network.broadcast({ type: 'SYNC_STATE', payload: newState });
+      if (user?.isKP) network.broadcast({ type: 'SYNC_STATE', payload: newState });
     }
-  }, [user, appState, netStatus]);
+  }, [user, netStatus.status]);
 
   const startHost = () => {
     const rid = `KOI-${Math.floor(1000 + Math.random() * 8999)}`;
@@ -123,7 +131,7 @@ const App = () => {
 
   const getStatusInfo = () => {
     switch(netStatus.status) {
-      case 'ERROR': return { color: 'bg-red-500', text: netStatus.roomId || '连接异常' };
+      case 'ERROR': return { color: 'bg-red-500', text: netStatus.roomId || '连接受阻' };
       case 'CONNECTING': return { color: 'bg-amber-400', text: `正在接入: ${netStatus.roomId}` };
       case 'READY':
       case 'CONNECTED_TO_HOST':
@@ -170,9 +178,8 @@ const App = () => {
           onUpdateDecks=${d => { saveState({decks: d}); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onImport=${data => { saveState(data); if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()}); }}
           onKick=${e => {
-            const list = appState.config.bannedEmails || [];
-            const newList = [...list, e];
-            const nc = { ...appState.config, bannedEmails: newList };
+            const list = stateRef.current.config.bannedEmails || [];
+            const nc = { ...stateRef.current.config, bannedEmails: [...list, e] };
             saveState({ config: nc });
             if(user.isKP) network.broadcast({type:'SYNC_STATE', payload: loadState()});
           }}
